@@ -10,6 +10,25 @@
     'image' => media_url(setting('hero_image')),
 ])
 
+@php
+    $scannedTable = app(\App\Services\CartService::class)->table();
+    $storeStatus = app(\App\Services\StoreHours::class)->status();
+@endphp
+@if ($scannedTable || ! $storeStatus['open'])
+    <div class="wrap -mt-6 mb-8 space-y-3">
+        @if ($scannedTable)
+            <form method="POST" action="{{ route('table.leave') }}" class="flex flex-wrap items-center justify-between gap-3 border border-gold bg-gold/10 px-5 py-4">
+                @csrf
+                <p class="text-cream">You are ordering for <span class="font-display tracking-widest text-gold-light">{{ $scannedTable->name }}</span> — we will bring the food to your table.</p>
+                <button class="text-xs uppercase tracking-[0.2em] text-sand hover:text-gold">Not at this table?</button>
+            </form>
+        @endif
+        @unless ($storeStatus['open'])
+            <p class="border border-ruby/60 bg-ruby/10 px-5 py-4 text-cream" role="status">{{ $storeStatus['message'] }} You can still browse the menu.</p>
+        @endunless
+    </div>
+@endif
+
 <div x-data="menuPage">
     {{-- Sticky filter bar --}}
     <div class="sticky top-[4.3rem] z-30 border-y border-gold/15 bg-ink/95 backdrop-blur-md">

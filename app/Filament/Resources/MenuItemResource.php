@@ -72,6 +72,8 @@ class MenuItemResource extends Resource
                 Toggle::make('is_featured')->label('Signature dish (home page)'),
                 Toggle::make('is_bestseller')->label('Bestseller badge'),
                 TextInput::make('sort_order')->numeric()->default(0),
+                TextInput::make('stock_qty')->label('Stock for today')->numeric()->minValue(0)
+                    ->helperText('Leave empty for unlimited. With a number, each order reduces it and the dish shows "Sold out" at 0.'),
             ])->columns(3)->columnSpanFull(),
         ]);
     }
@@ -84,6 +86,10 @@ class MenuItemResource extends Resource
                 TextColumn::make('name')->searchable()->sortable()->weight('bold')->description(fn (MenuItem $record) => $record->portion),
                 TextColumn::make('category.name')->badge()->sortable()->visibleFrom('md'),
                 TextColumn::make('price')->money('INR')->sortable(),
+                TextColumn::make('stock_qty')->label('Stock')->placeholder('∞')->sortable()->badge()
+                    ->color(fn (?int $state): string => match (true) {
+                        $state === null => 'gray', $state === 0 => 'danger', $state <= 5 => 'warning', default => 'success'
+                    }),
                 TextColumn::make('sale_price')->money('INR')->label('Offer')->placeholder('—')->visibleFrom('lg'),
                 ToggleColumn::make('is_available')->label('Available')->disabled(fn () => ! static::can('update')),
                 ToggleColumn::make('is_featured')->label('Signature')->disabled(fn () => ! static::can('update')),

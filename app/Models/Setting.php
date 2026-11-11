@@ -13,7 +13,7 @@ class Setting extends Model
     public const CACHE_KEY = 'site_settings';
 
     /** Stored encrypted in the database. */
-    public const ENCRYPTED = ['razorpay_key_secret', 'razorpay_webhook_secret', 'instagram_access_token'];
+    public const ENCRYPTED = ['razorpay_key_secret', 'razorpay_webhook_secret', 'instagram_access_token', 'fcm_service_account'];
 
     public static function allCached(): array
     {

@@ -7,7 +7,7 @@
 @section('content')
 @php
     $me = auth()->user();
-    $tabs = ['account' => 'Overview', 'account.orders' => 'My orders', 'account.settings' => 'Profile & addresses'];
+    $tabs = ['account' => 'Overview', 'account.orders' => 'My orders', 'account.favourites' => 'Favourites & points', 'account.settings' => 'Profile & addresses'];
 @endphp
 <section class="wrap pb-24 pt-32 lg:pt-36">
     <div class="flex flex-col justify-between gap-6 md:flex-row md:items-end">

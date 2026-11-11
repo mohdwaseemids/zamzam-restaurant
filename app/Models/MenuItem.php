@@ -19,6 +19,7 @@ class MenuItem extends Model
         'price' => 'decimal:2',
         'sale_price' => 'decimal:2',
         'photos' => 'array',
+        'stock_qty' => 'integer',
         'is_veg' => 'boolean',
         'is_featured' => 'boolean',
         'is_bestseller' => 'boolean',
@@ -29,6 +30,19 @@ class MenuItem extends Model
 
     protected static function booted(): void
     {
+        // Tracked stock: running out hides the dish, restocking brings it back.
+        static::saving(function (MenuItem $item): void {
+            if (! $item->isDirty('stock_qty') || $item->stock_qty === null) {
+                return;
+            }
+
+            if ((int) $item->stock_qty === 0) {
+                $item->is_available = false;
+            } elseif ((int) $item->getOriginal('stock_qty') === 0 && $item->getOriginal('stock_qty') !== null) {
+                $item->is_available = true;
+            }
+        });
+
         static::saving(function (MenuItem $item) {
             if (blank($item->slug)) {
                 $base = Str::slug($item->name);

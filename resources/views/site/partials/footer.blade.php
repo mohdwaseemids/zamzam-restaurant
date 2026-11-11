@@ -54,7 +54,11 @@
     <div class="border-t border-white/5">
         <div class="wrap flex flex-col items-center justify-between gap-3 py-6 text-sm text-sand md:flex-row">
             <p>© {{ date('Y') }} {{ setting('site_name', 'Zam Zam Family Restaurant') }}. All rights reserved.</p>
-            <p class="tracking-[0.25em] uppercase text-xs">100% Halal · Made fresh daily</p>
+            <p class="flex flex-wrap justify-center gap-x-5 gap-y-2">
+                <a class="hover:text-gold" href="{{ route('legal', 'privacy-policy') }}">Privacy policy</a>
+                <a class="hover:text-gold" href="{{ route('legal', 'terms') }}">Terms</a>
+                <a class="hover:text-gold" href="{{ route('legal', 'refund-policy') }}">Refunds &amp; cancellation</a>
+            </p>
         </div>
     </div>
 </footer>

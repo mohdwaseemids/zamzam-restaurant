@@ -1,13 +1,18 @@
 <?php
 
+use App\Http\Controllers\Api\AppController;
 use App\Models\Category;
 use App\Models\DeviceToken;
 use App\Models\GalleryImage;
 use App\Models\MenuItem;
 use App\Models\Review;
+use App\Models\User;
 use App\Models\Video;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\Rules\Password;
 
 /*
 | Read-only API for the future mobile app (v1).
@@ -66,17 +71,17 @@ Route::prefix('v1')->middleware('throttle:120,1,a1')->group(function () {
 */
 Route::prefix('v1/auth')->group(function () {
     Route::post('/register', function (Request $request) {
-        $request->merge(['phone' => \App\Models\User::normalizePhone($request->input('phone'))]);
+        $request->merge(['phone' => User::normalizePhone($request->input('phone'))]);
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'phone' => ['required', 'regex:/^[6-9][0-9]{9}$/', 'unique:users,phone'],
             'email' => ['nullable', 'email', 'max:150', 'unique:users,email'],
-            'password' => ['required', \Illuminate\Validation\Rules\Password::min(8)],
+            'password' => ['required', Password::min(8)],
             'device_name' => ['nullable', 'string', 'max:60'],
         ]);
 
-        $user = \App\Models\User::create(\Illuminate\Support\Arr::only($data, ['name', 'phone', 'email', 'password']) + ['is_active' => true]);
+        $user = User::create(Arr::only($data, ['name', 'phone', 'email', 'password']) + ['is_active' => true]);
         $user->assignRole('customer');
 
         return response()->json([
@@ -93,10 +98,10 @@ Route::prefix('v1/auth')->group(function () {
         ]);
 
         $user = str_contains($data['login'], '@')
-            ? \App\Models\User::where('email', strtolower(trim($data['login'])))->first()
-            : \App\Models\User::where('phone', \App\Models\User::normalizePhone($data['login']))->first();
+            ? User::where('email', strtolower(trim($data['login'])))->first()
+            : User::where('phone', User::normalizePhone($data['login']))->first();
 
-        if (! $user || ! $user->is_active || ! \Illuminate\Support\Facades\Hash::check($data['password'], $user->password)) {
+        if (! $user || ! $user->is_active || ! Hash::check($data['password'], $user->password)) {
             return response()->json(['message' => 'The mobile number / email or password is not correct.'], 422);
         }
 
@@ -115,6 +120,41 @@ Route::prefix('v1/auth')->group(function () {
             $request->user()->currentAccessToken()->delete();
 
             return ['ok' => true];
+        });
+    });
+});
+
+/*
+| Ordering from the mobile app. Totals, stock, coupons and points use the same
+| rules as the website (App\Services\OrderService).
+*/
+Route::prefix('v1')->middleware('throttle:120,1,a9')->group(function () {
+    Route::get('/store', [AppController::class, 'store']);
+    Route::post('/quote', [AppController::class, 'quote']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/orders', [AppController::class, 'placeOrder'])->middleware('throttle:10,10,a10');
+        Route::get('/orders/{orderNumber}', [AppController::class, 'showOrder']);
+        Route::post('/orders/{orderNumber}/verify-payment', [AppController::class, 'verifyPayment']);
+
+        Route::get('/addresses', [AppController::class, 'addresses']);
+        Route::post('/addresses', [AppController::class, 'storeAddress']);
+        Route::delete('/addresses/{address}', [AppController::class, 'destroyAddress']);
+
+        Route::get('/favourites', [AppController::class, 'favourites']);
+        Route::post('/favourites/{menuItem}', [AppController::class, 'toggleFavourite']);
+        Route::get('/loyalty', [AppController::class, 'loyalty']);
+
+        // The signed-in app registers its push token here so order updates reach this customer.
+        Route::post('/device-token', function (Request $request) {
+            $data = $request->validate([
+                'token' => ['required', 'string', 'max:512'],
+                'platform' => ['required', 'in:android,ios,web'],
+            ]);
+
+            DeviceToken::updateOrCreate(['token' => $data['token']], ['user_id' => $request->user()->id, 'platform' => $data['platform'], 'last_used_at' => now()]);
+
+            return response()->json(['ok' => true], 201);
         });
     });
 });

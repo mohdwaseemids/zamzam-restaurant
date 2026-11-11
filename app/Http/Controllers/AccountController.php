@@ -6,6 +6,7 @@ use App\Models\Address;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\CartService;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -69,6 +70,21 @@ class AccountController extends Controller
         return redirect()->route('checkout')->with('success', $missing > 0
             ? 'Added to your order. '.$missing.' '.str('dish')->plural($missing).' from last time '.($missing > 1 ? 'are' : 'is').' not available today.'
             : 'Your last order is back in the cart.');
+    }
+
+    public function favourites(Request $request): View
+    {
+        $user = $request->user();
+
+        return view('site.account.favourites', [
+            'dishes' => $user->favourites()->with('category')->latest('favourites.created_at')->get(),
+            'points' => (int) $user->loyalty_points,
+            'pointValue' => (float) setting('loyalty_point_value', 1),
+            'earnRate' => (float) setting('loyalty_earn_per_100', 5),
+            'minRedeem' => (int) setting('loyalty_min_redeem', 50),
+            'loyaltyEnabled' => (bool) setting('loyalty_enabled', true),
+            'history' => $user->loyaltyTransactions()->take(15)->get(),
+        ]);
     }
 
     public function settings(Request $request)

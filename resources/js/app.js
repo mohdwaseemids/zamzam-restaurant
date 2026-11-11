@@ -17,7 +17,9 @@ async function post(url, body) {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        throw new Error(data.message || 'Something went wrong. Please try again.');
+        const error = new Error(data.message || 'Something went wrong. Please try again.');
+        error.data = data;
+        throw error;
     }
 
     return data;
@@ -31,7 +33,11 @@ document.addEventListener('alpine:init', () => {
         open: false,
         busy: false,
         type: 'delivery',
-        data: { items: [], count: cfg.cartCount || 0, subtotal: 0, discount: 0, coupon_code: null, delivery_charge: 0, tax: 0, total: 0, meets_minimum: true, min_order: 0 },
+        data: {
+            items: [], count: cfg.cartCount || 0, subtotal: 0, discount: 0, coupon_code: null, delivery_charge: 0, tax: 0, total: 0,
+            meets_minimum: true, min_order: 0, area_required: false, area_id: null, points_balance: 0, points_redeemable: 0,
+            points_used: 0, points_discount: 0, points_will_earn: 0, store_open: true, store_message: null, notices: [],
+        },
 
         async load() {
             try {
@@ -53,6 +59,8 @@ document.addEventListener('alpine:init', () => {
                 this.data = await post(cfg.routes.cartAdd, { item_id: id, quantity: 1 });
                 Alpine.store('toast').show((name || 'Dish') + ' added to your order');
             } catch (e) {
+                // Stock ran short: the server still returns the corrected cart.
+                if (e.data && Array.isArray(e.data.items)) this.data = e.data;
                 Alpine.store('toast').show(e.message, true);
             }
             this.busy = false;
@@ -62,6 +70,18 @@ document.addEventListener('alpine:init', () => {
             this.busy = true;
             try {
                 this.data = await post(cfg.routes.cartUpdate, { item_id: id, quantity: Math.max(0, quantity), type: this.type });
+                if (this.data.notices && this.data.notices.length) Alpine.store('toast').show(this.data.notices[0], true);
+            } catch (e) {
+                Alpine.store('toast').show(e.message, true);
+            }
+            this.busy = false;
+        },
+
+        /* Delivery area / use loyalty points */
+        async setOption(options) {
+            this.busy = true;
+            try {
+                this.data = await post(cfg.routes.cartOptions, { ...options, type: this.type });
             } catch (e) {
                 Alpine.store('toast').show(e.message, true);
             }
@@ -88,6 +108,27 @@ document.addEventListener('alpine:init', () => {
         },
 
         money: rupee,
+    });
+
+    /* ---------- Favourite dishes (signed-in customers) ---------- */
+    Alpine.store('favs', {
+        ids: cfg.favourites || [],
+        has(id) {
+            return this.ids.includes(id);
+        },
+        async toggle(id) {
+            if (!cfg.signedIn) {
+                window.location.href = cfg.routes.login;
+                return;
+            }
+            try {
+                const result = await post(cfg.routes.favourite.replace('__ID__', id));
+                this.ids = result.ids;
+                Alpine.store('toast').show(result.saved ? 'Saved to your favourites' : 'Removed from favourites');
+            } catch (e) {
+                Alpine.store('toast').show(e.message, true);
+            }
+        },
     });
 
     Alpine.store('toast', {

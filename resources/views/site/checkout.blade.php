@@ -5,7 +5,7 @@
 
 @section('content')
 @php
-    $defaultType = old('type', $deliveryAvailable ? 'delivery' : 'pickup');
+    $defaultType = $table ? 'dine_in' : old('type', $deliveryAvailable ? 'delivery' : 'pickup');
     $defaultPayment = old('payment_method', $onlineAvailable ? 'razorpay' : 'cod');
     $defaultAddress = $addresses->firstWhere('is_default', true) ?? $addresses->first();
 @endphp
@@ -28,6 +28,13 @@
             {{-- Order type --}}
             <fieldset>
                 <legend class="font-display text-xl tracking-widest text-gold-light">1 · How would you like it?</legend>
+                @if ($table)
+                    <input type="hidden" name="type" value="dine_in">
+                    <div class="mt-5 flex flex-wrap items-center justify-between gap-4 border border-gold bg-gold/10 px-5 py-4">
+                        <p class="text-cream"><span class="block text-xs uppercase tracking-[0.22em] text-gold">Dine in</span><span class="mt-1 block font-serif text-2xl italic">{{ $table->name }}</span></p>
+                        <button type="submit" form="leave-table" class="text-xs uppercase tracking-[0.2em] text-sand hover:text-gold">Not at this table?</button>
+                    </div>
+                @else
                 <div class="mt-5 grid gap-4 sm:grid-cols-2">
                     @if ($deliveryAvailable)
                         <label class="tile">
@@ -40,6 +47,7 @@
                         <span><span class="block font-medium text-cream">Takeaway</span><span class="mt-1 block text-sm text-sand">Collect from the restaurant counter.</span></span>
                     </label>
                 </div>
+                @endif
                 @error('type')<p class="field-error">{{ $message }}</p>@enderror
             </fieldset>
 
@@ -57,6 +65,19 @@
                         <input class="field" id="phone" name="phone" type="tel" inputmode="numeric" pattern="[6-9][0-9]{9}" maxlength="10" value="{{ old('phone', $customer?->phone) }}" required autocomplete="tel-national" placeholder="10 digit mobile">
                         @error('phone')<p class="field-error">{{ $message }}</p>@enderror
                     </div>
+                    @if ($areas->isNotEmpty() && ! $table)
+                        <div class="md:col-span-2" x-show="type === 'delivery'" x-transition>
+                            <label class="field-label" for="area_id">Delivery area *</label>
+                            <select class="field" id="area_id" name="area_id" :required="type === 'delivery'" @change="$store.cart.setOption({ area_id: $event.target.value || null })">
+                                <option value="">— Choose your area —</option>
+                                @foreach ($areas as $area)
+                                    <option value="{{ $area->id }}" @selected((int) old('area_id', $summary['area_id']) === $area->id)>{{ $area->label }} — {{ (float) $area->charge > 0 ? money($area->charge).' delivery' : 'Free delivery' }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-2 text-sm text-sand">Your area is not listed? We do not deliver there yet — please choose Takeaway or call us.</p>
+                            @error('area_id')<p class="field-error">{{ $message }}</p>@enderror
+                        </div>
+                    @endif
                     @if ($addresses->isNotEmpty())
                         <div class="md:col-span-2" x-show="type === 'delivery'">
                             <span class="field-label">Deliver to a saved address</span>
@@ -105,7 +126,7 @@
                     @if ($codAvailable)
                         <label class="tile">
                             <input type="radio" name="payment_method" value="cod" @checked($defaultPayment === 'cod' || ! $onlineAvailable)>
-                            <span><span class="block font-medium text-cream" x-text="type === 'delivery' ? 'Cash on delivery' : 'Pay at counter'">Cash on delivery</span><span class="mt-1 block text-sm text-sand">Pay in cash when you receive your food.</span></span>
+                            <span><span class="block font-medium text-cream" x-text="type === 'delivery' ? 'Cash on delivery' : 'Pay at counter'">Cash on delivery</span><span class="mt-1 block text-sm text-sand" x-text="type === 'dine_in' ? 'Pay the bill at the counter after your meal.' : 'Pay in cash when you receive your food.'">Pay in cash when you receive your food.</span></span>
                         </label>
                     @endif
                 </div>
@@ -156,10 +177,22 @@
                     </template>
                 </div>
 
+                {{-- Loyalty points --}}
+                @auth
+                    <div x-cloak x-show="$store.cart.data.points_redeemable > 0" class="mt-4 border-t border-gold/15 pt-5">
+                        <label class="flex cursor-pointer items-start gap-3 text-cream/90">
+                            <input type="checkbox" class="mt-1 size-4 accent-[#c9a45c]" :checked="$store.cart.data.points_used > 0" @change="$store.cart.setOption({ use_points: $event.target.checked })">
+                            <span>Use <span class="font-medium text-gold-light" x-text="$store.cart.data.points_redeemable"></span> loyalty points
+                                <span class="block text-sm text-sand">You have <span x-text="$store.cart.data.points_balance"></span> points.</span></span>
+                        </label>
+                    </div>
+                @endauth
+
                 <dl class="mt-4 space-y-3 border-t border-gold/15 pt-5 text-cream/90">
                     <div class="flex justify-between"><dt class="text-sand">Subtotal</dt><dd x-text="$store.cart.money($store.cart.data.subtotal)">{{ money($summary['subtotal']) }}</dd></div>
                     <div class="flex justify-between text-leaf" x-cloak x-show="$store.cart.data.discount > 0"><dt>Coupon discount</dt><dd x-text="'− ' + $store.cart.money($store.cart.data.discount)"></dd></div>
-                    <div class="flex justify-between" x-show="type === 'delivery'"><dt class="text-sand">Delivery</dt><dd x-text="$store.cart.data.delivery_charge > 0 ? $store.cart.money($store.cart.data.delivery_charge) : 'Free'"></dd></div>
+                    <div class="flex justify-between text-leaf" x-cloak x-show="$store.cart.data.points_discount > 0"><dt>Loyalty points</dt><dd x-text="'− ' + $store.cart.money($store.cart.data.points_discount)"></dd></div>
+                    <div class="flex justify-between" x-show="type === 'delivery'"><dt class="text-sand">Delivery<span x-show="$store.cart.data.area_name" x-text="' · ' + $store.cart.data.area_name"></span></dt><dd x-text="$store.cart.data.area_required && !$store.cart.data.area_id ? 'Choose area' : ($store.cart.data.delivery_charge > 0 ? $store.cart.money($store.cart.data.delivery_charge) : 'Free')"></dd></div>
                     <div class="flex justify-between" x-show="$store.cart.data.tax > 0"><dt class="text-sand">Taxes</dt><dd x-text="$store.cart.money($store.cart.data.tax)"></dd></div>
                     <div class="flex items-baseline justify-between border-t border-gold/15 pt-4"><dt class="text-sm uppercase tracking-[0.22em] text-sand">Total</dt><dd class="font-display text-3xl text-gold-light" x-text="$store.cart.money($store.cart.data.total)">{{ money($summary['total']) }}</dd></div>
                 </dl>
@@ -169,12 +202,17 @@
                 </p>
                 <p x-cloak x-show="!$store.cart.data.meets_minimum" class="field-error">Minimum order is <span x-text="$store.cart.money($store.cart.data.min_order)"></span>.</p>
 
-                <button class="btn btn-gold mt-7 w-full" :disabled="submitting || !$store.cart.data.meets_minimum || $store.cart.data.count === 0 || {{ (! $onlineAvailable && ! $codAvailable) ? 'true' : 'false' }}">
+                <p x-cloak x-show="$store.cart.data.points_will_earn > 0" class="mt-4 text-sm text-sand">You will earn <span class="text-gold-light" x-text="$store.cart.data.points_will_earn"></span> loyalty points on this order.</p>
+                <p x-cloak x-show="!$store.cart.data.store_open" class="field-error" x-text="$store.cart.data.store_message"></p>
+
+                <button class="btn btn-gold mt-7 w-full" :disabled="submitting || !$store.cart.data.meets_minimum || !$store.cart.data.store_open || $store.cart.data.count === 0 || {{ (! $onlineAvailable && ! $codAvailable) ? 'true' : 'false' }}">
                     <span x-show="!submitting">Place order</span><span x-cloak x-show="submitting">Placing your order…</span>
                 </button>
                 <a href="{{ route('menu') }}" class="mt-4 block text-center text-sm text-sand hover:text-gold">← Add more dishes</a>
             </div>
         </aside>
     </form>
+
+    <form id="leave-table" method="POST" action="{{ route('table.leave') }}" class="hidden">@csrf</form>
 </section>
 @endsection

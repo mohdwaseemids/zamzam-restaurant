@@ -5,6 +5,10 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\SiteController;
+use App\Models\Order;
+use App\Models\RestaurantTable;
+use chillerlan\QRCode\QRCode;
+use chillerlan\QRCode\QROptions;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [SiteController::class, 'home'])->name('home');
@@ -17,12 +21,18 @@ Route::post('/reserve', [SiteController::class, 'storeReservation'])->middleware
 Route::get('/contact', [SiteController::class, 'contact'])->name('contact');
 Route::post('/contact', [SiteController::class, 'storeContact'])->middleware('throttle:6,10,w3')->name('contact.store');
 Route::get('/placeholder.svg', [SiteController::class, 'placeholder'])->name('placeholder');
+Route::get('/menu/{menuItem:slug}', [SiteController::class, 'dish'])->name('dish');
+Route::post('/favourites/{menuItem}', [SiteController::class, 'toggleFavourite'])->middleware('auth')->name('favourites.toggle');
+Route::get('/t/{token}', [SiteController::class, 'tableScan'])->name('table.scan');
+Route::post('/leave-table', [SiteController::class, 'leaveTable'])->name('table.leave');
+Route::get('/{page}', [SiteController::class, 'legal'])->whereIn('page', ['privacy-policy', 'terms', 'refund-policy'])->name('legal');
 
 Route::prefix('cart')->name('cart.')->group(function () {
     Route::get('/', [CartController::class, 'show'])->name('show');
     Route::post('/add', [CartController::class, 'add'])->name('add');
     Route::post('/update', [CartController::class, 'update'])->name('update');
     Route::post('/coupon', [CartController::class, 'coupon'])->middleware('throttle:20,10,w4')->name('coupon');
+    Route::post('/options', [CartController::class, 'options'])->name('options');
     Route::post('/clear', [CartController::class, 'clear'])->name('clear');
 });
 
@@ -55,6 +65,7 @@ Route::middleware('auth')->prefix('account')->group(function () {
     Route::get('/', [AccountController::class, 'index'])->name('account');
     Route::get('/orders', [AccountController::class, 'orderHistory'])->name('account.orders');
     Route::post('/orders/{order}/reorder', [AccountController::class, 'reorder'])->name('account.reorder');
+    Route::get('/favourites', [AccountController::class, 'favourites'])->name('account.favourites');
     Route::get('/settings', [AccountController::class, 'settings'])->name('account.settings');
     Route::put('/profile', [AccountController::class, 'updateProfile'])->name('account.profile');
     Route::put('/password', [AccountController::class, 'updatePassword'])->middleware('throttle:6,10,w11')->name('account.password');
@@ -64,8 +75,28 @@ Route::middleware('auth')->prefix('account')->group(function () {
 });
 
 // Printable bill for staff (opened from Admin → Orders).
-Route::get('/admin/orders/{order}/bill', function (\App\Models\Order $order) {
+Route::get('/admin/orders/{order}/bill', function (Order $order) {
     abort_unless(auth()->check() && auth()->user()->can('view orders'), 403);
 
     return view('admin.bill', ['order' => $order->load('items')]);
 })->name('admin.orders.bill');
+
+// Printable QR code for a table (Admin → Tables & QR codes).
+Route::get('/admin/tables/{table}/qr', function (RestaurantTable $table) {
+    abort_unless(auth()->check() && auth()->user()->can('view tables'), 403);
+
+    return view('admin.table-qr', [
+        'table' => $table,
+        'qr' => (new QRCode(new QROptions(['scale' => 12, 'quietzoneSize' => 2])))->render($table->order_url),
+    ]);
+})->name('admin.tables.qr');
+
+// GST tax invoice (Admin → Orders → Tax invoice).
+Route::get('/admin/orders/{order}/invoice', function (Order $order) {
+    abort_unless(auth()->check() && auth()->user()->can('view orders'), 403);
+    abort_if($order->status === 'cancelled', 404);
+
+    $order->ensureInvoiceNumber();
+
+    return view('admin.invoice', ['order' => $order->load('items', 'table')]);
+})->name('admin.orders.invoice');

@@ -69,6 +69,7 @@
             <dl class="mt-3 space-y-2.5 border-t border-gold/15 pt-5 text-cream/90">
                 <div class="flex justify-between"><dt class="text-sand">Subtotal</dt><dd>{{ money($order->subtotal) }}</dd></div>
                 @if ((float) $order->discount > 0)<div class="flex justify-between text-leaf"><dt>Coupon {{ $order->coupon_code }}</dt><dd>− {{ money($order->discount) }}</dd></div>@endif
+                @if ((float) $order->points_discount > 0)<div class="flex justify-between text-leaf"><dt>Loyalty points ({{ $order->points_redeemed }})</dt><dd>− {{ money($order->points_discount) }}</dd></div>@endif
                 @if ($order->type === 'delivery')<div class="flex justify-between"><dt class="text-sand">Delivery</dt><dd>{{ (float) $order->delivery_charge > 0 ? money($order->delivery_charge) : 'Free' }}</dd></div>@endif
                 @if ((float) $order->tax > 0)<div class="flex justify-between"><dt class="text-sand">Taxes</dt><dd>{{ money($order->tax) }}</dd></div>@endif
                 <div class="flex items-baseline justify-between border-t border-gold/15 pt-4"><dt class="text-sm uppercase tracking-[0.22em] text-sand">Total</dt><dd class="font-display text-3xl text-gold-light">{{ money($order->total) }}</dd></div>
@@ -77,7 +78,7 @@
 
         <div class="card space-y-6 p-6 md:col-span-2 md:p-8">
             <div>
-                <p class="eyebrow">{{ $order->type_label }}</p>
+                <p class="eyebrow">{{ $order->type_label }}@if ($order->table) · {{ $order->table->name }}@endif</p>
                 <p class="mt-3 text-cream">{{ $order->customer_name }}</p>
                 <p class="text-sand">{{ $order->phone }}</p>
                 @if ($order->address)<p class="mt-2 text-sand">{{ $order->address }}@if ($order->landmark), near {{ $order->landmark }}@endif</p>@endif

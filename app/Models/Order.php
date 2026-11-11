@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\Services\OrderService;
+use App\Services\PushService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Order extends Model
 {
@@ -13,6 +16,7 @@ class Order extends Model
     protected $casts = [
         'subtotal' => 'decimal:2',
         'discount' => 'decimal:2',
+        'points_discount' => 'decimal:2',
         'delivery_charge' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
@@ -57,6 +61,58 @@ class Order extends Model
         'completed' => 'success',
         'cancelled' => 'danger',
     ];
+
+    protected static function booted(): void
+    {
+        // Side effects of a status change: loyalty points, stock and the customer's push notification.
+        static::updated(function (Order $order): void {
+            if (! $order->wasChanged('status')) {
+                return;
+            }
+
+            $service = app(OrderService::class);
+
+            if ($order->status === 'completed') {
+                $service->awardPoints($order);
+            }
+
+            if ($order->status === 'cancelled') {
+                $service->reverse($order);
+            }
+
+            app(PushService::class)->orderStatusChanged($order);
+        });
+    }
+
+    public function deliveryArea(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryArea::class);
+    }
+
+    public function table(): BelongsTo
+    {
+        return $this->belongsTo(RestaurantTable::class, 'restaurant_table_id');
+    }
+
+    /** GST invoice number, e.g. ZZ/2026-27/0042. Issued once, in sequence, per financial year. */
+    public function ensureInvoiceNumber(): string
+    {
+        if ($this->invoice_number) {
+            return $this->invoice_number;
+        }
+
+        return DB::transaction(function (): string {
+            $start = $this->created_at->month >= 4 ? $this->created_at->year : $this->created_at->year - 1;
+            $prefix = 'ZZ/'.$start.'-'.substr((string) ($start + 1), -2).'/';
+
+            $last = static::where('invoice_number', 'like', $prefix.'%')->lockForUpdate()->max('invoice_number');
+            $next = $last ? ((int) substr($last, strlen($prefix))) + 1 : 1;
+
+            $this->updateQuietly(['invoice_number' => $prefix.str_pad((string) $next, 4, '0', STR_PAD_LEFT)]);
+
+            return $this->invoice_number;
+        });
+    }
 
     public static function generateNumber(): string
     {

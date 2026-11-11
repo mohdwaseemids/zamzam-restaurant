@@ -33,7 +33,7 @@ class DatabaseSeeder extends Seeder
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $modules = ['categories', 'menu items', 'coupons', 'orders', 'reservations', 'gallery', 'videos', 'instagram', 'reviews', 'messages', 'users', 'roles'];
+        $modules = ['categories', 'menu items', 'coupons', 'orders', 'reservations', 'gallery', 'videos', 'instagram', 'reviews', 'messages', 'delivery areas', 'tables', 'expenses', 'users', 'roles'];
         $abilities = ['view', 'create', 'update', 'delete'];
 
         foreach ($modules as $module) {
@@ -54,13 +54,13 @@ class DatabaseSeeder extends Seeder
 
         Role::findOrCreate('manager')->syncPermissions([
             'access admin panel', 'manage settings', 'view reports', 'view customers',
-            ...$all(['categories', 'menu items', 'coupons', 'orders', 'reservations', 'gallery', 'videos', 'instagram', 'reviews', 'messages']),
+            ...$all(['categories', 'menu items', 'coupons', 'orders', 'reservations', 'gallery', 'videos', 'instagram', 'reviews', 'messages', 'delivery areas', 'tables', 'expenses']),
             'view users',
         ]);
 
         Role::findOrCreate('order_staff')->syncPermissions([
             'access admin panel',
-            'view orders', 'create orders', 'update orders', 'view customers',
+            'view orders', 'create orders', 'update orders', 'view customers', 'view tables',
             'view reservations', 'create reservations', 'update reservations',
             'view messages',
             'view menu items', 'update menu items',

@@ -31,7 +31,12 @@
         window.ZZ = {
             csrf: @json(csrf_token()),
             cartCount: {{ (int) ($cartCount ?? 0) }},
+            signedIn: @json(auth()->check()),
+            favourites: @json(auth()->check() ? auth()->user()->favourites()->pluck('menu_items.id')->all() : []),
             routes: {
+                cartOptions: @json(route('cart.options')),
+                favourite: @json(route('favourites.toggle', '__ID__')),
+                login: @json(route('login')),
                 cart: @json(route('cart.show')),
                 cartAdd: @json(route('cart.add')),
                 cartUpdate: @json(route('cart.update')),

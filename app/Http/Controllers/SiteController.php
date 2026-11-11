@@ -8,9 +8,14 @@ use App\Models\GalleryImage;
 use App\Models\InstagramPost;
 use App\Models\MenuItem;
 use App\Models\Reservation;
+use App\Models\RestaurantTable;
 use App\Models\Review;
 use App\Models\Video;
 use App\Services\AdminNotifier;
+use App\Services\CartService;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 class SiteController extends Controller
@@ -124,6 +129,73 @@ class SiteController extends Controller
         AdminNotifier::newMessage($message);
 
         return back()->with('success', 'Thank you! Your message has reached us.');
+    }
+
+    public function dish(MenuItem $menuItem): View
+    {
+        abort_unless($menuItem->category?->is_active, 404);
+
+        $reviews = $menuItem->reviews()->approved()->latest()->take(12)->get();
+
+        return view('site.dish', [
+            'item' => $menuItem->load('category'),
+            'photos' => collect([$menuItem->image])->merge($menuItem->photos ?? [])->filter()->map(fn (string $path): string => media_url($path))->values(),
+            'reviews' => $reviews,
+            'rating' => ['average' => round((float) $reviews->avg('rating'), 1), 'count' => $reviews->count()],
+            'related' => MenuItem::available()->where('category_id', $menuItem->category_id)->whereKeyNot($menuItem->id)->orderBy('sort_order')->take(4)->get(),
+        ]);
+    }
+
+    public function toggleFavourite(Request $request, MenuItem $menuItem): JsonResponse
+    {
+        $result = $request->user()->favourites()->toggle($menuItem->id);
+
+        return response()->json([
+            'saved' => $result['attached'] !== [],
+            'ids' => $request->user()->favourites()->pluck('menu_items.id')->all(),
+        ]);
+    }
+
+    /** Privacy policy, terms and refund policy. Text comes from Website settings → Legal, with a default template. */
+    public function legal(string $page): View
+    {
+        $pages = [
+            'privacy-policy' => ['Privacy Policy', 'legal_privacy'],
+            'terms' => ['Terms & Conditions', 'legal_terms'],
+            'refund-policy' => ['Refund & Cancellation Policy', 'legal_refund'],
+        ];
+
+        abort_unless(isset($pages[$page]), 404);
+
+        [$title, $settingKey] = $pages[$page];
+        $custom = setting($settingKey);
+
+        return view('site.legal', [
+            'title' => $title,
+            'page' => $page,
+            'customHtml' => filled($custom) ? str($custom)->markdown(['html_input' => 'strip', 'allow_unsafe_links' => false]) : null,
+        ]);
+    }
+
+    /** A guest scanned the QR code on a table: remember the table and show the menu. */
+    public function tableScan(string $token, CartService $cart): RedirectResponse
+    {
+        $table = RestaurantTable::where('token', $token)->where('is_active', true)->first();
+
+        if (! $table) {
+            return redirect()->route('menu')->with('error', 'This table code is not active. Please ask our staff for help.');
+        }
+
+        session([CartService::TABLE_KEY => $table->id]);
+
+        return redirect()->route('menu')->with('success', 'You are ordering for '.$table->name.'. Add your dishes and we will bring them to your table.');
+    }
+
+    public function leaveTable(): RedirectResponse
+    {
+        session()->forget(CartService::TABLE_KEY);
+
+        return redirect()->route('menu')->with('success', 'Table ordering switched off.');
     }
 
     /** Branded SVG shown wherever a photo has not been uploaded yet. */

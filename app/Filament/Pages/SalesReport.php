@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Expense;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Filament\Actions\Action;
@@ -81,6 +82,7 @@ class SalesReport extends Page
         $revenue = (float) $valid()->sum('total');
 
         [$from, $to] = $this->range();
+        $expenses = 0.0;
 
         return [
             'stats' => [
@@ -90,7 +92,12 @@ class SalesReport extends Page
                 'Collected' => money((float) $valid()->where('payment_status', 'paid')->sum('total')),
                 'Discounts given' => money((float) $valid()->sum('discount')),
                 'Cancelled orders' => number_format($this->orders()->where('status', 'cancelled')->count()),
+                'Expenses' => money($expenses = (float) Expense::whereBetween('spent_on', [$from->toDateString(), $to->toDateString()])->sum('amount')),
+                'Sales minus expenses' => money($revenue - $expenses),
             ],
+            'expensesByCategory' => Expense::whereBetween('spent_on', [$from->toDateString(), $to->toDateString()])
+                ->selectRaw('category, SUM(amount) as total')->groupBy('category')->orderByDesc('total')->get()
+                ->map(fn ($row): array => ['label' => Expense::CATEGORIES[$row->category] ?? $row->category, 'total' => $row->total]),
             'byType' => $valid()->selectRaw('type, COUNT(*) as orders_count, SUM(total) as revenue')->groupBy('type')->get()
                 ->map(fn ($row) => ['label' => Order::TYPES[$row->type] ?? $row->type, 'orders' => $row->orders_count, 'revenue' => $row->revenue]),
             'byPayment' => $valid()->selectRaw('payment_method, COUNT(*) as orders_count, SUM(total) as revenue')->groupBy('payment_method')->get()

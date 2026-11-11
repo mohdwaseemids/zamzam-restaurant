@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Models\RestaurantTable;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -58,6 +59,23 @@ class ExampleTest extends TestCase
 
         $this->get('/account')->assertOk();
         $this->get('/admin')->assertForbidden();
+    }
+
+    public function test_every_admin_page_loads_for_the_owner(): void
+    {
+        $this->actingAs(User::where('email', env('ADMIN_EMAIL', 'admin@zamzam.test'))->firstOrFail());
+
+        $pages = [
+            '', 'orders', 'reservations', 'sales-report', 'restaurant-tables', 'delivery-areas', 'expenses', 'categories', 'menu-items',
+            'coupons', 'gallery-images', 'videos', 'instagram-posts', 'customers', 'reviews', 'contact-messages', 'users', 'roles', 'settings',
+        ];
+
+        foreach ($pages as $page) {
+            $this->get('/admin/'.$page)->assertOk();
+        }
+
+        $table = RestaurantTable::factory()->create();
+        $this->get(route('admin.tables.qr', $table))->assertOk()->assertSee($table->name);
     }
 
     public function test_staff_only_see_modules_their_role_allows(): void

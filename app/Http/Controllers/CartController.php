@@ -31,8 +31,13 @@ class CartController extends Controller
         }
 
         $this->cart->add($item->id, $data['quantity'] ?? 1);
+        $summary = $this->cart->summary();
 
-        return response()->json($this->cart->summary() + ['message' => $item->name.' added to your order']);
+        if ($summary['notices'] !== []) {
+            return response()->json(['message' => $summary['notices'][0]] + $summary, 422);
+        }
+
+        return response()->json($summary + ['message' => $item->name.' added to your order']);
     }
 
     public function update(Request $request): JsonResponse
@@ -40,7 +45,7 @@ class CartController extends Controller
         $data = $request->validate([
             'item_id' => ['required', 'integer'],
             'quantity' => ['required', 'integer', 'between:0,'.CartService::MAX_QTY],
-            'type' => ['nullable', 'in:delivery,pickup'],
+            'type' => ['nullable', 'in:delivery,pickup,dine_in'],
         ]);
 
         $this->cart->set($data['item_id'], $data['quantity']);
@@ -52,7 +57,7 @@ class CartController extends Controller
     {
         $data = $request->validate([
             'code' => ['nullable', 'string', 'max:40'],
-            'type' => ['nullable', 'in:delivery,pickup'],
+            'type' => ['nullable', 'in:delivery,pickup,dine_in'],
         ]);
 
         if (filled($data['code'] ?? null) && ! Coupon::findByCode($data['code'])) {
@@ -69,6 +74,26 @@ class CartController extends Controller
         }
 
         return response()->json($summary);
+    }
+
+    /** Delivery area and "use my points" choices made on the checkout page. */
+    public function options(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'area_id' => ['nullable', 'integer'],
+            'use_points' => ['nullable', 'boolean'],
+            'type' => ['nullable', 'in:delivery,pickup,dine_in'],
+        ]);
+
+        if ($request->has('area_id')) {
+            $this->cart->setArea($data['area_id'] ?? null);
+        }
+
+        if ($request->has('use_points')) {
+            $this->cart->usePoints((bool) $data['use_points'] && $request->user() !== null);
+        }
+
+        return response()->json($this->cart->summary($data['type'] ?? 'delivery'));
     }
 
     public function clear(): JsonResponse

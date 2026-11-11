@@ -2,25 +2,30 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Coupon;
+use App\Models\DeliveryArea;
 use App\Models\Order;
 use App\Services\AdminNotifier;
 use App\Services\CartService;
+use App\Services\OrderService;
 use App\Services\RazorpayService;
+use App\Services\StoreHours;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class CheckoutController extends Controller
 {
-    public function __construct(protected CartService $cart, protected RazorpayService $razorpay) {}
+    public function __construct(protected CartService $cart, protected RazorpayService $razorpay, protected OrderService $orders, protected StoreHours $hours) {}
 
-    public function show()
+    public function show(): View|RedirectResponse
     {
-        if (! setting('ordering_enabled', true)) {
-            return redirect()->route('menu')->with('error', 'Online ordering is closed right now. Please call us to order.');
+        $store = $this->hours->status();
+
+        if (! $store['open']) {
+            return redirect()->route('menu')->with('error', $store['message']);
         }
 
         if ($this->cart->isEmpty()) {
@@ -34,25 +39,32 @@ class CheckoutController extends Controller
             'deliveryAvailable' => (bool) setting('delivery_enabled', true),
             'customer' => auth()->user(),
             'addresses' => auth()->user()?->addresses ?? collect(),
+            'areas' => DeliveryArea::active()->get(),
+            'table' => $this->cart->table(),
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
-        abort_unless((bool) setting('ordering_enabled', true), 403, 'Online ordering is closed.');
+        $table = $this->cart->table();
 
         $methods = array_keys(array_filter([
             'razorpay' => $this->onlineAvailable(),
             'cod' => (bool) setting('cod_enabled', true),
         ]));
 
-        $types = setting('delivery_enabled', true) ? ['delivery', 'pickup'] : ['pickup'];
+        $types = match (true) {
+            $table !== null => ['dine_in'],
+            (bool) setting('delivery_enabled', true) => ['delivery', 'pickup'],
+            default => ['pickup'],
+        };
 
         $data = $request->validate([
             'customer_name' => ['required', 'string', 'max:100'],
             'phone' => ['required', 'string', 'regex:/^[6-9][0-9]{9}$/'],
             'email' => ['nullable', 'email', 'max:150'],
             'type' => ['required', Rule::in($types)],
+            'area_id' => ['nullable', 'integer'],
             'address' => ['required_if:type,delivery', 'nullable', 'string', 'max:500'],
             'landmark' => ['nullable', 'string', 'max:150'],
             'notes' => ['nullable', 'string', 'max:500'],
@@ -64,56 +76,15 @@ class CheckoutController extends Controller
             'payment_method.in' => 'This payment method is not available right now.',
         ]);
 
-        $summary = $this->cart->summary($data['type']);
-
-        if ($summary['count'] === 0) {
-            return redirect()->route('menu')->with('error', 'Your order is empty.');
+        if ($data['type'] === 'delivery' && array_key_exists('area_id', $data)) {
+            $this->cart->setArea($data['area_id']);
         }
 
-        if (! $summary['meets_minimum']) {
-            return back()->withInput()->with('error', 'Minimum order is '.money($summary['min_order']).'. Please add a little more.');
+        try {
+            $order = $this->orders->place($this->cart->summary($data['type']), $data, $data['payment_method'], auth()->user(), 'web', $table);
+        } catch (ValidationException $e) {
+            return back()->withInput()->with('error', collect($e->errors())->flatten()->first());
         }
-
-        $order = DB::transaction(function () use ($data, $summary) {
-            $order = Order::create([
-                'order_number' => Order::generateNumber(),
-                'token' => Str::random(48),
-                'user_id' => auth()->id(),
-                'customer_name' => $data['customer_name'],
-                'phone' => $data['phone'],
-                'email' => $data['email'] ?? null,
-                'type' => $summary['type'],
-                'address' => $summary['type'] === 'delivery' ? $data['address'] : null,
-                'landmark' => $summary['type'] === 'delivery' ? ($data['landmark'] ?? null) : null,
-                'notes' => $data['notes'] ?? null,
-                'subtotal' => $summary['subtotal'],
-                'discount' => $summary['discount'],
-                'coupon_code' => $summary['discount'] > 0 ? $summary['coupon_code'] : null,
-                'delivery_charge' => $summary['delivery_charge'],
-                'tax' => $summary['tax'],
-                'total' => $summary['total'],
-                'payment_method' => $data['payment_method'],
-                'payment_status' => 'pending',
-                'status' => 'pending',
-                'source' => 'web',
-            ]);
-
-            foreach ($summary['items'] as $item) {
-                $order->items()->create([
-                    'menu_item_id' => $item['id'],
-                    'name' => $item['name'].($item['portion'] ? ' ('.$item['portion'].')' : ''),
-                    'price' => $item['price'],
-                    'quantity' => $item['quantity'],
-                    'total' => $item['total'],
-                ]);
-            }
-
-            if ($order->coupon_code) {
-                Coupon::where('code', $order->coupon_code)->increment('used_count');
-            }
-
-            return $order;
-        });
 
         // Signed-in customers can keep a new delivery address for next time.
         if (auth()->check() && $order->type === 'delivery' && $request->boolean('save_address')) {
@@ -252,25 +223,7 @@ class CheckoutController extends Controller
 
     protected function markPaid(Order $order, ?string $paymentId, ?string $signature = null): void
     {
-        $justPaid = DB::transaction(function () use ($order, $paymentId, $signature) {
-            $fresh = Order::whereKey($order->id)->lockForUpdate()->first();
-
-            if ($fresh->payment_status === 'paid') {
-                return false; // browser callback and webhook can both arrive
-            }
-
-            $fresh->update([
-                'payment_status' => 'paid',
-                'razorpay_payment_id' => $paymentId,
-                'razorpay_signature' => $signature ?? $fresh->razorpay_signature,
-                'paid_at' => now(),
-                'status' => $fresh->status === 'pending' ? 'confirmed' : $fresh->status,
-            ]);
-
-            return true;
-        });
-
-        if ($justPaid) {
+        if ($this->orders->markPaid($order, $paymentId, $signature)) {
             AdminNotifier::newOrder($order->fresh());
         }
     }

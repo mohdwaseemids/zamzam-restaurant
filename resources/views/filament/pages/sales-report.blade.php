@@ -46,6 +46,19 @@
             </table></div>
         </x-filament::section>
 
+        <x-filament::section heading="Expenses by category">
+            <div class="zz-table-wrap"><table class="zz-table">
+                <thead><tr><th>Category</th><th class="zz-num">Spent</th></tr></thead>
+                <tbody>
+                    @forelse ($expensesByCategory as $row)
+                        <tr><td>{{ $row['label'] }}</td><td class="zz-num"><strong>{{ money($row['total']) }}</strong></td></tr>
+                    @empty
+                        <tr><td colspan="2" class="zz-empty">No expenses recorded in this period.</td></tr>
+                    @endforelse
+                </tbody>
+            </table></div>
+        </x-filament::section>
+
         <x-filament::section heading="Best selling dishes">
             <div class="zz-table-wrap"><table class="zz-table">
                 <thead><tr><th>Dish</th><th class="zz-num">Qty</th><th class="zz-num">Sales</th></tr></thead>

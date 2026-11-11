@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Pages;
 use App\Filament\Resources\OrderResource;
 use App\Models\MenuItem;
 use App\Models\Order;
+use App\Services\OrderService;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -91,6 +92,10 @@ class ManageOrders extends ManageRecords
                 'quantity' => $quantities[$dish->id],
                 'total' => round($dish->final_price * $quantities[$dish->id], 2),
             ]);
+
+            app(OrderService::class)->takeStock($lines->map(fn (array $line): array => [
+                'id' => $line['menu_item_id'], 'name' => $line['name'], 'quantity' => $line['quantity'],
+            ])->all());
 
             $subtotal = (float) $lines->sum('total');
             $discount = min($subtotal, (float) ($data['discount'] ?? 0));

@@ -66,7 +66,9 @@ class OrderResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        $paymentColor = fn (string $state) => match ($state) { 'paid' => 'success', 'failed' => 'danger', 'refunded' => 'gray', default => 'warning' };
+        $paymentColor = fn (string $state) => match ($state) {
+            'paid' => 'success', 'failed' => 'danger', 'refunded' => 'gray', default => 'warning'
+        };
 
         return $schema->components([
             Section::make('Order')->schema([
@@ -84,6 +86,8 @@ class OrderResource extends Resource
             Section::make('Customer')->schema([
                 TextEntry::make('customer_name')->label('Name'),
                 TextEntry::make('phone')->copyable()->placeholder('—'),
+                TextEntry::make('table.name')->label('Table')->placeholder('—')->visible(fn (Order $record) => $record->type === 'dine_in'),
+                TextEntry::make('deliveryArea.name')->label('Delivery area')->placeholder('—')->visible(fn (Order $record) => $record->type === 'delivery'),
                 TextEntry::make('address')->placeholder('—')->columnSpanFull(),
                 TextEntry::make('landmark')->placeholder('—'),
                 TextEntry::make('notes')->placeholder('—'),
@@ -97,7 +101,10 @@ class OrderResource extends Resource
                 ])->columns(4)->columnSpanFull(),
                 TextEntry::make('subtotal')->money('INR'),
                 TextEntry::make('discount')->money('INR')->label(fn (Order $record) => $record->coupon_code ? 'Discount ('.$record->coupon_code.')' : 'Discount'),
+                TextEntry::make('points_discount')->money('INR')->label(fn (Order $record) => 'Loyalty points ('.$record->points_redeemed.')')
+                    ->visible(fn (Order $record) => (float) $record->points_discount > 0),
                 TextEntry::make('delivery_charge')->money('INR'),
+                TextEntry::make('tax')->money('INR')->visible(fn (Order $record) => (float) $record->tax > 0),
                 TextEntry::make('total')->money('INR')->weight('bold')->size('lg'),
             ])->columns(['default' => 2, 'lg' => 4])->columnSpanFull(),
         ]);
@@ -112,12 +119,15 @@ class OrderResource extends Resource
                     ->description(fn (Order $record) => $record->customer_name.' · '.money($record->total).' · '.$record->created_at->format('d M, h:i A')),
                 TextColumn::make('customer_name')->label('Customer')->searchable()->description(fn (Order $record) => $record->phone)->visibleFrom('md'),
                 TextColumn::make('phone')->searchable()->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('type')->badge()->color('gray')->formatStateUsing(fn (string $state) => Order::TYPES[$state] ?? $state)->visibleFrom('md'),
+                TextColumn::make('type')->badge()->color('gray')->formatStateUsing(fn (string $state) => Order::TYPES[$state] ?? $state)->visibleFrom('md')
+                    ->description(fn (Order $record) => $record->table?->name ?? $record->deliveryArea?->name),
                 TextColumn::make('items_count')->counts('items')->label('Items')->visibleFrom('lg'),
                 TextColumn::make('total')->money('INR')->sortable()->weight('bold')->visibleFrom('sm'),
                 TextColumn::make('payment_status')->label('Payment')->badge()->formatStateUsing(fn (string $state) => Order::PAYMENT_STATUSES[$state] ?? $state)
                     ->description(fn (Order $record) => Order::PAYMENT_METHODS[$record->payment_method] ?? $record->payment_method)
-                    ->color(fn (string $state) => match ($state) { 'paid' => 'success', 'failed' => 'danger', 'refunded' => 'gray', default => 'warning' })
+                    ->color(fn (string $state) => match ($state) {
+                        'paid' => 'success', 'failed' => 'danger', 'refunded' => 'gray', default => 'warning'
+                    })
                     ->visibleFrom('md'),
                 TextColumn::make('status')->badge()
                     ->formatStateUsing(fn (string $state) => Order::STATUSES[$state] ?? $state)
@@ -146,6 +156,9 @@ class OrderResource extends Resource
                     ViewAction::make(),
                     Action::make('bill')->label('Print bill')->icon('heroicon-o-printer')
                         ->url(fn (Order $record) => route('admin.orders.bill', $record), shouldOpenInNewTab: true),
+                    Action::make('invoice')->label('GST tax invoice')->icon('heroicon-o-document-text')
+                        ->visible(fn (Order $record) => $record->status !== 'cancelled')
+                        ->url(fn (Order $record) => route('admin.orders.invoice', $record), shouldOpenInNewTab: true),
                     EditAction::make()->label('Change status'),
                     Action::make('cancel')->label('Cancel order')->icon('heroicon-o-x-circle')->color('danger')
                         ->requiresConfirmation()
