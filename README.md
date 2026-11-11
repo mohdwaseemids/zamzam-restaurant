@@ -14,7 +14,9 @@ Built with Laravel 13, Filament 5 (admin), Spatie roles & permissions, Tailwind 
 
 ## Setup
 
-Requirements: PHP 8.3+, Composer, Node 20+, MySQL 8 (InnoDB).
+**Full step-by-step guide: [SETUP.md](SETUP.md)** — local install, demo logins, live server, connecting Razorpay and email, and fixes for common problems.
+
+Short version. Requirements: PHP 8.3+, Composer, Node 20+, MySQL 8 (InnoDB).
 
 ```bash
 composer install
@@ -49,5 +51,6 @@ Hourly Instagram sync needs the Laravel scheduler: `* * * * * php artisan schedu
 
 ## Notes
 
-- Seeded dishes, prices and photos are demo content. The photos are hot-linked stock images from Unsplash; replace them with real ones in the admin panel.
+- Seeded dishes, prices and photos are demo content. The photos are free stock images from Unsplash bundled in `database/seeders/demo-photos`; they are not pictures of the restaurant. Replace them with real ones in the admin panel.
+- The seeder also creates demo delivery areas, tables with QR codes and a `WELCOME10` coupon.
 - Roles: `super_admin`, `manager`, `order_staff`, `content_editor`, `customer`. Permissions are `view|create|update|delete <module>`.

@@ -4,21 +4,41 @@ namespace Database\Seeders;
 
 use App\Filament\Pages\SiteSettings;
 use App\Models\Category;
+use App\Models\Coupon;
+use App\Models\DeliveryArea;
 use App\Models\GalleryImage;
 use App\Models\MenuItem;
+use App\Models\RestaurantTable;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 class DatabaseSeeder extends Seeder
 {
-    /** Demo stock photos (Unsplash). Replace every one with real restaurant photos from the admin panel. */
+    /**
+     * Demo stock photos (from Unsplash) bundled in database/seeders/demo-photos.
+     * They are copied into public storage so the site has pictures straight after setup.
+     * Replace every one with real restaurant photos from the admin panel.
+     */
     protected function photo(string $id, int $width = 1000): string
     {
-        return "https://images.unsplash.com/photo-{$id}?auto=format&fit=crop&w={$width}&q=75";
+        $source = database_path("seeders/demo-photos/{$id}.jpg");
+
+        if (! is_file($source)) {
+            return "https://images.unsplash.com/photo-{$id}?auto=format&fit=crop&w={$width}&q=75";
+        }
+
+        $path = "demo/{$id}.jpg";
+
+        if (! Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->put($path, file_get_contents($source));
+        }
+
+        return $path;
     }
 
     public function run(): void
@@ -27,6 +47,65 @@ class DatabaseSeeder extends Seeder
         $this->seedSettings();
         $this->seedMenu();
         $this->seedGallery();
+        $this->seedOperations();
+        $this->useBundledPhotos();
+    }
+
+    /** Demo delivery areas, dine-in tables and a welcome coupon, so every screen has something to show. */
+    protected function seedOperations(): void
+    {
+        if (! DeliveryArea::exists()) {
+            foreach ([['Within 2 km of the restaurant', 20, 0], ['2 to 5 km', 40, 200], ['5 to 8 km', 60, 400]] as $index => [$name, $charge, $minimum]) {
+                DeliveryArea::create(['name' => $name, 'charge' => $charge, 'min_order' => $minimum, 'sort_order' => $index + 1]);
+            }
+        }
+
+        if (! RestaurantTable::exists()) {
+            foreach (['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Family Hall 1', 'Family Hall 2'] as $name) {
+                RestaurantTable::create(['name' => $name, 'seats' => str_contains($name, 'Family') ? 8 : 4]);
+            }
+        }
+
+        if (! Coupon::exists()) {
+            Coupon::create([
+                'code' => 'WELCOME10',
+                'description' => '10% off your first online order',
+                'type' => 'percent',
+                'value' => 10,
+                'min_order' => 300,
+                'max_discount' => 100,
+            ]);
+        }
+    }
+
+    /** Older installs stored web links to the demo photos; point them at the bundled copies instead. */
+    protected function useBundledPhotos(): void
+    {
+        $local = function (?string $value): ?string {
+            if ($value && preg_match('~images\.unsplash\.com/photo-([0-9a-f-]+)\?~', $value, $match)) {
+                $path = $this->photo($match[1]);
+
+                return str_starts_with($path, 'http') ? null : $path;
+            }
+
+            return null;
+        };
+
+        foreach ([Category::class, MenuItem::class, GalleryImage::class] as $model) {
+            $model::query()->where('image', 'like', 'https://images.unsplash.com/%')->get()->each(function ($record) use ($local): void {
+                if ($path = $local($record->image)) {
+                    $record->updateQuietly(['image' => $path]);
+                }
+            });
+        }
+
+        $settings = Setting::whereIn('key', ['hero_image', 'about_image'])->get()
+            ->mapWithKeys(fn (Setting $setting): array => [$setting->key => $local($setting->value)])
+            ->filter()->all();
+
+        if ($settings !== []) {
+            Setting::putMany($settings);
+        }
     }
 
     protected function seedRolesAndUsers(): void
